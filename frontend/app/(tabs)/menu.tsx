@@ -334,6 +334,7 @@ const styles = StyleSheet.create({
   },
   productsContainer: {
     padding: 16,
+    paddingBottom: 100,
   },
   emptyProducts: {
     alignItems: 'center',
