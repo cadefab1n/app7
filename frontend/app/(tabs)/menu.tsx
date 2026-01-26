@@ -308,6 +308,7 @@ const styles = StyleSheet.create({
   categoriesContainer: {
     backgroundColor: 'transparent',
     paddingVertical: 16,
+    marginBottom: 8,
   },
   categoriesContent: {
     paddingHorizontal: 16,
