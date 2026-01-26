@@ -371,14 +371,13 @@ const styles = StyleSheet.create({
     right: 12,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
   },
   badge: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 8,
   },
   badgeText: {
     color: '#fff',
