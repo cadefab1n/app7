@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   },
   productCard: {
     borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 20,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
