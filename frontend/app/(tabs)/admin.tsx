@@ -255,7 +255,7 @@ export default function AdminScreen() {
               
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => Alert.alert('Em breve', 'Gestão de categorias será implementada')}
+                onPress={() => router.push('/admin/categories')}
               >
                 <Ionicons name="grid" size={24} color="#4CAF50" />
                 <Text style={[styles.actionButtonText, { color: isDark ? '#fff' : '#000' }]}>Gerenciar Categorias</Text>
@@ -264,7 +264,7 @@ export default function AdminScreen() {
               
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => Alert.alert('Em breve', 'Gestão de produtos será implementada')}
+                onPress={() => router.push('/admin/products')}
               >
                 <Ionicons name="fast-food" size={24} color="#2196F3" />
                 <Text style={[styles.actionButtonText, { color: isDark ? '#fff' : '#000' }]}>Gerenciar Produtos</Text>
@@ -273,7 +273,7 @@ export default function AdminScreen() {
               
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => Alert.alert('Em breve', 'Geração de QR Code será implementada')}
+                onPress={() => router.push('/admin/qrcode')}
               >
                 <Ionicons name="qr-code" size={24} color="#9C27B0" />
                 <Text style={[styles.actionButtonText, { color: isDark ? '#fff' : '#000' }]}>Gerar QR Code</Text>
