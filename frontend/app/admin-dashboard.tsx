@@ -59,15 +59,14 @@ export default function AdminDashboard() {
     try {
       const isAuth = await AsyncStorage.getItem('admin_authenticated');
       if (!isAuth) {
-        Alert.alert('Acesso Negado', 'Você precisa fazer login primeiro', [
-          { text: 'OK', onPress: () => router.push('/admin-login') }
-        ]);
+        // Redirecionar imediatamente para o login
+        router.replace('/admin-login');
         return;
       }
       loadData();
     } catch (error) {
       console.error('Error checking auth:', error);
-      router.push('/admin-login');
+      router.replace('/admin-login');
     }
   };
 
