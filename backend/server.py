@@ -6,6 +6,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime, time
 import os
+import sys
 from dotenv import load_dotenv
 import qrcode
 import io
@@ -23,8 +24,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
-client = MongoClient(os.getenv("MONGO_URL"))
+# MongoDB connection with proper error handling
+MONGO_URL = os.getenv("MONGO_URL")
+if not MONGO_URL:
+    print("ERROR: MONGO_URL environment variable is not set!")
+    print("Please set MONGO_URL in your .env file or environment variables.")
+    print("Example: MONGO_URL=mongodb://localhost:27017")
+    sys.exit(1)
+
+try:
+    client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
+    # Test the connection
+    client.server_info()
+    print(f"✅ Successfully connected to MongoDB")
+except Exception as e:
+    print(f"ERROR: Failed to connect to MongoDB: {e}")
+    print(f"MONGO_URL: {MONGO_URL}")
+    sys.exit(1)
+
 db = client["seven_menu"]
 
 # Collections
