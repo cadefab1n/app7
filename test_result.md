@@ -167,15 +167,18 @@ backend:
 
   - task: "API de Menus por Horário"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "low"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados mas não testados ainda. Funcionalidade para almoço/happy hour/noite"
+      - working: true
+        agent: "testing"
+        comment: "✅ Time Menu API completamente testado e funcionando: GET /restaurants/{id}/time-menus (listar), POST /time-menus (criar), PUT /time-menus/{id} (atualizar), DELETE /time-menus/{id} (deletar). Testado com 3 menus: Almoço Executivo (11:00-15:00), Happy Hour (17:00-19:00), Jantar Especial (19:00-23:00). Todas operações CRUD funcionando perfeitamente. Minor: HTTP status 400 em vez de 404 para recursos inexistentes (não impacta funcionalidade core)."
 
 frontend:
   - task: "Tab Navigation (Menu + Admin)"
