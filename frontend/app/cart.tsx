@@ -49,35 +49,74 @@ export default function CartScreen() {
     }
 
     if (!whatsapp) {
-      Alert.alert('Erro', 'Número do WhatsApp não encontrado');
+      Alert.alert('Erro', 'Número do WhatsApp não encontrado. Configure o WhatsApp do restaurante no painel admin.');
       return;
     }
 
-    let message = `Olá! Gostaria de fazer o seguinte pedido:\n\n`;
+    // Montar mensagem do pedido
+    let message = `🛒 *NOVO PEDIDO - ${restaurantName}*\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n\n`;
     
-    items.forEach(item => {
-      message += `*${item.quantity}x ${item.name}*\n`;
-      message += `R$ ${item.price.toFixed(2)} cada\n`;
-      message += `Subtotal: R$ ${(item.price * item.quantity).toFixed(2)}\n\n`;
+    items.forEach((item, index) => {
+      message += `${index + 1}. *${item.name}*\n`;
+      message += `   Qtd: ${item.quantity} x R$ ${item.price.toFixed(2)}\n`;
+      message += `   Subtotal: R$ ${(item.price * item.quantity).toFixed(2)}\n\n`;
     });
     
-    message += `*TOTAL: R$ ${getTotalPrice().toFixed(2)}*\n\n`;
-    message += `Aguardo confirmação. Obrigado!`;
+    message += `━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `💰 *TOTAL: R$ ${getTotalPrice().toFixed(2)}*\n\n`;
+    message += `📱 Pedido feito pelo cardápio digital\n`;
+    message += `⏰ ${new Date().toLocaleString('pt-BR')}\n\n`;
+    message += `Aguardo confirmação. Obrigado! 🙏`;
 
-    const phoneNumber = whatsapp.replace(/\D/g, '');
+    // Limpar número (remover caracteres não numéricos)
+    let phoneNumber = whatsapp.replace(/\D/g, '');
+    
+    // Garantir formato internacional (Brasil)
+    if (phoneNumber.length === 11 && !phoneNumber.startsWith('55')) {
+      phoneNumber = '55' + phoneNumber;
+    } else if (phoneNumber.length === 10 && !phoneNumber.startsWith('55')) {
+      phoneNumber = '55' + phoneNumber;
+    }
+    
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
     
-    console.log('WhatsApp URL:', whatsappUrl);
-    console.log('Telefone:', phoneNumber);
+    console.log('=== WhatsApp Debug ===');
+    console.log('Número original:', whatsapp);
+    console.log('Número formatado:', phoneNumber);
+    console.log('URL:', whatsappUrl);
+    console.log('Mensagem:', message);
     
     try {
+      // Na web, abrir diretamente em nova aba
+      if (Platform.OS === 'web') {
+        window.open(whatsappUrl, '_blank');
+        
+        Alert.alert(
+          '✅ Redirecionando para WhatsApp',
+          'Uma nova aba foi aberta com seu pedido. Complete o envio no WhatsApp!',
+          [
+            {
+              text: 'Limpar Carrinho',
+              onPress: () => {
+                clearCart();
+                router.push('/menu');
+              }
+            },
+            { text: 'Manter Carrinho' }
+          ]
+        );
+        return;
+      }
+      
+      // Em dispositivos móveis
       const supported = await Linking.canOpenURL(whatsappUrl);
       
       if (supported) {
         await Linking.openURL(whatsappUrl);
         
         Alert.alert(
-          'Pedido enviado!',
+          '✅ Pedido Enviado!',
           'Seu pedido foi enviado pelo WhatsApp. Aguarde a confirmação do restaurante.',
           [
             {
@@ -90,20 +129,22 @@ export default function CartScreen() {
           ]
         );
       } else {
-        Alert.alert(
-          'WhatsApp não disponível',
-          `Não foi possível abrir o WhatsApp. Entre em contato pelo número: ${whatsapp}`,
-          [
-            { text: 'Copiar Número', onPress: () => console.log('Copiar:', whatsapp) },
-            { text: 'OK' }
-          ]
-        );
+        // Fallback: tentar abrir mesmo assim
+        await Linking.openURL(whatsappUrl);
       }
     } catch (error) {
       console.error('Erro ao abrir WhatsApp:', error);
+      
+      // Fallback para web
+      if (Platform.OS === 'web') {
+        window.open(whatsappUrl, '_blank');
+        Alert.alert('WhatsApp', 'Nova aba aberta com seu pedido!');
+        return;
+      }
+      
       Alert.alert(
-        'Erro',
-        `Não foi possível abrir o WhatsApp. Telefone: ${whatsapp}`,
+        'Não foi possível abrir o WhatsApp',
+        `Entre em contato diretamente pelo número:\n\n📞 ${whatsapp}\n\nOu copie a mensagem e envie manualmente.`,
         [{ text: 'OK' }]
       );
     }
