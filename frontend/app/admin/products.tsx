@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
-  ActivityIndicator,
-  useColorScheme,
-  KeyboardAvoidingView,
-  Platform,
   Image,
+  Alert,
+  Modal,
   Switch,
+  RefreshControl,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -23,14 +23,15 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 interface Product {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   price: number;
+  promo_price?: number;
   image?: string;
   category_id: string;
   active: boolean;
-  badges: string[];
-  stock_enabled: boolean;
-  stock_quantity: number;
+  featured?: string;
+  orders?: number;
+  views?: number;
 }
 
 interface Category {
@@ -40,227 +41,149 @@ interface Category {
 
 export default function ProductsScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [restaurantId, setRestaurantId] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [restaurantId, setRestaurantId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
   
-  // Form state
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [image, setImage] = useState<string | null>(null);
-  const [stockEnabled, setStockEnabled] = useState(false);
-  const [stockQuantity, setStockQuantity] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const loadData = async () => {
-    try {
-      const restaurantsRes = await fetch(`${API_URL}/api/restaurants`);
-      const restaurantsData = await restaurantsRes.json();
-      
-      if (restaurantsData.restaurants && restaurantsData.restaurants.length > 0) {
-        const restId = restaurantsData.restaurants[0].id;
-        setRestaurantId(restId);
-
-        const categoriesRes = await fetch(`${API_URL}/api/restaurants/${restId}/categories`);
-        const categoriesData = await categoriesRes.json();
-        setCategories(categoriesData.categories || []);
-
-        const productsRes = await fetch(`${API_URL}/api/restaurants/${restId}/products`);
-        const productsData = await productsRes.json();
-        setProducts(productsData.products || []);
-      }
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Modal states
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    price: '',
+    promo_price: '',
+    category_id: '',
+    image: '',
+    active: true,
+    featured: '',
+  });
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.5,
-      base64: true,
-    });
-
-    if (!result.canceled && result.assets[0].base64) {
-      setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+  const loadData = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/restaurants`);
+      const data = await res.json();
+      
+      if (data.restaurants?.length > 0) {
+        const restId = data.restaurants[0].id;
+        setRestaurantId(restId);
+        
+        const [catRes, prodRes] = await Promise.all([
+          fetch(`${API_URL}/api/restaurants/${restId}/categories`),
+          fetch(`${API_URL}/api/restaurants/${restId}/products`),
+        ]);
+        
+        const catData = await catRes.json();
+        const prodData = await prodRes.json();
+        
+        setCategories(catData.categories || []);
+        setProducts(prodData.products || []);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, []);
+
+  const handleAddProduct = () => {
+    setEditingProduct(null);
+    setFormData({
+      name: '',
+      description: '',
+      price: '',
+      promo_price: '',
+      category_id: categories[0]?.id || '',
+      image: '',
+      active: true,
+      featured: '',
+    });
+    setModalVisible(true);
+  };
+
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct(product);
+    setFormData({
+      name: product.name,
+      description: product.description || '',
+      price: product.price.toString(),
+      promo_price: product.promo_price?.toString() || '',
+      category_id: product.category_id,
+      image: product.image || '',
+      active: product.active,
+      featured: product.featured || '',
+    });
+    setModalVisible(true);
   };
 
   const handleSave = async () => {
-    console.log('=== INICIANDO SALVAMENTO ===');
-    console.log('Nome:', name);
-    console.log('Descrição:', description);
-    console.log('Preço:', price);
-    console.log('Categoria ID:', categoryId);
-    console.log('Restaurant ID:', restaurantId);
-    console.log('Stock Enabled:', stockEnabled);
-    console.log('Stock Quantity:', stockQuantity);
-    
-    if (!name.trim()) {
-      Alert.alert('Erro', 'Digite o nome do produto');
-      return;
-    }
-    
-    if (!description.trim()) {
-      Alert.alert('Erro', 'Digite a descrição do produto');
-      return;
-    }
-    
-    if (!price.trim()) {
-      Alert.alert('Erro', 'Digite o preço do produto');
-      return;
-    }
-    
-    if (!categoryId) {
-      Alert.alert('Erro', 'Selecione uma categoria');
+    if (!formData.name || !formData.price || !formData.category_id) {
+      Alert.alert('Erro', 'Preencha os campos obrigatórios');
       return;
     }
 
-    const priceNum = parseFloat(price.replace(',', '.'));
-    if (isNaN(priceNum) || priceNum <= 0) {
-      Alert.alert('Erro', 'Preço inválido');
-      return;
-    }
+    const productData = {
+      name: formData.name,
+      description: formData.description,
+      price: parseFloat(formData.price),
+      promo_price: formData.promo_price ? parseFloat(formData.promo_price) : null,
+      category_id: formData.category_id,
+      restaurant_id: restaurantId,
+      image: formData.image,
+      active: formData.active,
+      featured: formData.featured || null,
+    };
 
-    if (stockEnabled && stockQuantity.trim()) {
-      const stockNum = parseInt(stockQuantity);
-      if (isNaN(stockNum) || stockNum < 0) {
-        Alert.alert('Erro', 'Quantidade de estoque inválida');
-        return;
-      }
-    }
-
-    setSaving(true);
     try {
-      const data = {
-        name: name.trim(),
-        description: description.trim(),
-        price: priceNum,
-        category_id: categoryId,
-        restaurant_id: restaurantId,
-        image: image,
-        badges: [],
-        active: true,
-        order: products.length + 1,
-        stock_enabled: stockEnabled,
-        stock_quantity: stockEnabled && stockQuantity ? parseInt(stockQuantity) : 0,
-      };
-
-      console.log('Dados a enviar:', JSON.stringify(data, null, 2));
-
-      let result;
-      if (editingId) {
-        console.log('Atualizando produto:', editingId);
-        const res = await fetch(`${API_URL}/api/products/${editingId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        result = await res.json();
-        console.log('Resultado atualização:', result);
-      } else {
-        console.log('Criando novo produto');
-        const res = await fetch(`${API_URL}/api/products`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        result = await res.json();
-        console.log('Resultado criação:', result);
-      }
+      const url = editingProduct
+        ? `${API_URL}/api/products/${editingProduct.id}`
+        : `${API_URL}/api/products`;
       
-      if (result.success) {
-        Alert.alert('Sucesso!', editingId ? 'Produto atualizado!' : 'Produto criado!');
-        resetForm();
-        await loadData();
-      } else {
-        Alert.alert('Erro', result.detail || 'Falha ao salvar produto');
-      }
-    } catch (error) {
-      console.error('Erro ao salvar:', error);
-      Alert.alert('Erro', 'Falha ao salvar produto: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const resetForm = () => {
-    setName('');
-    setDescription('');
-    setPrice('');
-    setCategoryId('');
-    setImage(null);
-    setStockEnabled(false);
-    setStockQuantity('');
-    setEditingId(null);
-    setShowForm(false);
-  };
-
-  const handleEdit = (product: Product) => {
-    setEditingId(product.id);
-    setName(product.name);
-    setDescription(product.description);
-    setPrice(product.price.toString());
-    setCategoryId(product.category_id);
-    setImage(product.image || null);
-    setStockEnabled(product.stock_enabled || false);
-    setStockQuantity(product.stock_quantity?.toString() || '0');
-    setShowForm(true);
-  };
-
-  const handleToggle = async (productId: string) => {
-    try {
-      const res = await fetch(`${API_URL}/api/products/${productId}/toggle`, {
-        method: 'PATCH',
+      const res = await fetch(url, {
+        method: editingProduct ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData),
       });
-      const result = await res.json();
-      if (result.success) {
+
+      if (res.ok) {
+        Alert.alert('Sucesso', editingProduct ? 'Produto atualizado!' : 'Produto criado!');
+        setModalVisible(false);
         loadData();
       }
     } catch (error) {
-      Alert.alert('Erro', 'Falha ao alternar status');
-      console.error(error);
+      Alert.alert('Erro', 'Falha ao salvar produto');
     }
   };
 
-  const handleDelete = (productId: string, productName: string) => {
+  const handleDelete = (product: Product) => {
     Alert.alert(
-      'Confirmar',
-      `Deseja deletar o produto "${productName}"?`,
+      'Excluir Produto',
+      `Deseja excluir "${product.name}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Deletar',
+          text: 'Excluir',
           style: 'destructive',
           onPress: async () => {
             try {
-              const res = await fetch(`${API_URL}/api/products/${productId}`, {
-                method: 'DELETE',
-              });
-              const result = await res.json();
-              if (result.success) {
-                Alert.alert('Sucesso', 'Produto deletado!');
-                loadData();
-              }
+              await fetch(`${API_URL}/api/products/${product.id}`, { method: 'DELETE' });
+              loadData();
             } catch (error) {
-              Alert.alert('Erro', 'Falha ao deletar produto');
-              console.error(error);
+              Alert.alert('Erro', 'Falha ao excluir');
             }
           },
         },
@@ -268,239 +191,346 @@ export default function ProductsScreen() {
     );
   };
 
-  // Group products by category
-  const groupedProducts = products.reduce((groups, product) => {
-    const category = categories.find(c => c.id === product.category_id);
-    const categoryName = category?.name || 'Sem categoria';
-    if (!groups[categoryName]) {
-      groups[categoryName] = [];
+  const handleDuplicate = async (product: Product) => {
+    try {
+      await fetch(`${API_URL}/api/products/${product.id}/duplicate`, { method: 'POST' });
+      Alert.alert('Sucesso', 'Produto duplicado!');
+      loadData();
+    } catch (error) {
+      Alert.alert('Erro', 'Falha ao duplicar');
     }
-    groups[categoryName].push(product);
-    return groups;
-  }, {} as Record<string, Product[]>);
+  };
+
+  const handleToggle = async (product: Product) => {
+    try {
+      await fetch(`${API_URL}/api/products/${product.id}/toggle`, { method: 'PATCH' });
+      loadData();
+    } catch (error) {
+      Alert.alert('Erro', 'Falha ao alterar status');
+    }
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0].base64) {
+      setFormData({ ...formData, image: `data:image/jpeg;base64,${result.assets[0].base64}` });
+    }
+  };
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find(c => c.id === categoryId)?.name || 'Sem categoria';
+  };
+
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = !filterCategory || p.category_id === filterCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: isDark ? '#000' : '#fff' }]}>
-        <ActivityIndicator size="large" color="#ffea07" />
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color="#3B82F6" />
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
-    >
-      <View style={[styles.container, { backgroundColor: isDark ? '#000' : '#f5f5f5' }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.push('/admin-dashboard')} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
-          </TouchableOpacity>
-          <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>Produtos</Text>
-          <TouchableOpacity
-            onPress={() => {
-              if (showForm) {
-                resetForm();
-              } else {
-                setShowForm(true);
-              }
-            }}
-            style={styles.addButton}
-          >
-            <Ionicons name={showForm ? 'close' : 'add'} size={24} color="#ffea07" />
-          </TouchableOpacity>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/admin-dashboard')}>
+          <Ionicons name="arrow-back" size={24} color="#1F2937" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Produtos</Text>
+        <TouchableOpacity style={styles.addBtn} onPress={handleAddProduct}>
+          <Ionicons name="add" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search & Filters */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={20} color="#9CA3AF" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar produto..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </View>
+      </View>
 
-        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-          {showForm && (
-            <View style={[styles.card, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#fff' : '#000' }]}>
-                {editingId ? 'Editar Produto' : 'Novo Produto'}
-              </Text>
-              
-              <TextInput
-                style={[styles.input, { backgroundColor: isDark ? '#000' : '#f9f9f9', color: isDark ? '#fff' : '#000' }]}
-                placeholder="Nome do produto *"
-                placeholderTextColor={isDark ? '#666' : '#999'}
-                value={name}
-                onChangeText={setName}
-              />
-              
-              <TextInput
-                style={[styles.input, styles.textArea, { backgroundColor: isDark ? '#000' : '#f9f9f9', color: isDark ? '#fff' : '#000' }]}
-                placeholder="Descrição *"
-                placeholderTextColor={isDark ? '#666' : '#999'}
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={3}
-              />
-              
-              <TextInput
-                style={[styles.input, { backgroundColor: isDark ? '#000' : '#f9f9f9', color: isDark ? '#fff' : '#000' }]}
-                placeholder="Preço (ex: 45.90) *"
-                placeholderTextColor={isDark ? '#666' : '#999'}
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="decimal-pad"
-              />
+      {/* Category Filter */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+        <TouchableOpacity
+          style={[styles.filterPill, !filterCategory && styles.filterPillActive]}
+          onPress={() => setFilterCategory(null)}
+        >
+          <Text style={[styles.filterText, !filterCategory && styles.filterTextActive]}>
+            Todos ({products.length})
+          </Text>
+        </TouchableOpacity>
+        {categories.map(cat => (
+          <TouchableOpacity
+            key={cat.id}
+            style={[styles.filterPill, filterCategory === cat.id && styles.filterPillActive]}
+            onPress={() => setFilterCategory(cat.id)}
+          >
+            <Text style={[styles.filterText, filterCategory === cat.id && styles.filterTextActive]}>
+              {cat.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
-              <View style={styles.pickerContainer}>
-                <Text style={[styles.label, { color: isDark ? '#fff' : '#000' }]}>Categoria: *</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPicker}>
-                  {categories.map((cat) => (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={[
-                        styles.categoryOption,
-                        categoryId === cat.id && styles.categoryOptionSelected,
-                        { backgroundColor: categoryId === cat.id ? '#ffea07' : (isDark ? '#000' : '#f9f9f9') }
-                      ]}
-                      onPress={() => setCategoryId(cat.id)}
-                    >
-                      <Text style={[
-                        styles.categoryOptionText,
-                        { color: categoryId === cat.id ? '#000' : (isDark ? '#fff' : '#000') }
-                      ]}>
-                        {cat.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Controle de Estoque */}
-              <View style={styles.stockContainer}>
-                <View style={styles.stockHeader}>
-                  <View>
-                    <Text style={[styles.label, { color: isDark ? '#fff' : '#000' }]}>Controlar estoque</Text>
-                    <Text style={[styles.helperText, { color: isDark ? '#aaa' : '#666' }]}>
-                      Ative para controlar quantidade disponível
-                    </Text>
-                  </View>
-                  <Switch
-                    value={stockEnabled}
-                    onValueChange={setStockEnabled}
-                    trackColor={{ false: '#ccc', true: '#ffea07' }}
-                    thumbColor={stockEnabled ? '#fff' : '#f4f3f4'}
-                  />
+      {/* Products List */}
+      <ScrollView
+        style={styles.productsList}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {filteredProducts.map(product => (
+          <TouchableOpacity
+            key={product.id}
+            style={styles.productCard}
+            onPress={() => handleEditProduct(product)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.productRow}>
+              {product.image ? (
+                <Image source={{ uri: product.image }} style={styles.productImage} />
+              ) : (
+                <View style={styles.productImagePlaceholder}>
+                  <Ionicons name="image-outline" size={24} color="#D1D5DB" />
                 </View>
-                
-                {stockEnabled && (
-                  <TextInput
-                    style={[styles.input, { backgroundColor: isDark ? '#000' : '#f9f9f9', color: isDark ? '#fff' : '#000', marginTop: 12 }]}
-                    placeholder="Quantidade em estoque"
-                    placeholderTextColor={isDark ? '#666' : '#999'}
-                    value={stockQuantity}
-                    onChangeText={setStockQuantity}
-                    keyboardType="number-pad"
-                  />
-                )}
-              </View>
-
-              <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
-                <Ionicons name="image" size={24} color="#ffea07" />
-                <Text style={styles.imageButtonText}>
-                  {image ? 'Trocar Imagem' : 'Adicionar Imagem'}
-                </Text>
-              </TouchableOpacity>
-
-              {image && (
-                <Image source={{ uri: image }} style={styles.imagePreview} />
               )}
               
-              <TouchableOpacity
-                style={[styles.primaryButton, { opacity: saving ? 0.5 : 1 }]}
-                onPress={handleSave}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#000" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>
-                    {editingId ? 'Atualizar Produto' : 'Criar Produto'}
+              <View style={styles.productInfo}>
+                <View style={styles.productHeader}>
+                  <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
+                  {product.featured && (
+                    <View style={styles.featuredBadge}>
+                      <Text style={styles.featuredText}>
+                        {product.featured === 'mais_vendido' ? '🔥' : product.featured === 'novo' ? '✨' : '⭐'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                
+                <Text style={styles.productCategory}>{getCategoryName(product.category_id)}</Text>
+                
+                <View style={styles.priceRow}>
+                  {product.promo_price ? (
+                    <>
+                      <Text style={styles.oldPrice}>R$ {product.price.toFixed(2)}</Text>
+                      <Text style={styles.promoPrice}>R$ {product.promo_price.toFixed(2)}</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.price}>R$ {product.price.toFixed(2)}</Text>
+                  )}
+                </View>
+                
+                {(product.views || product.orders) && (
+                  <Text style={styles.statsText}>
+                    {product.views || 0} views • {product.orders || 0} vendas
                   </Text>
                 )}
+              </View>
+              
+              <View style={styles.productActions}>
+                <Switch
+                  value={product.active}
+                  onValueChange={() => handleToggle(product)}
+                  trackColor={{ false: '#E5E7EB', true: '#BBF7D0' }}
+                  thumbColor={product.active ? '#10B981' : '#9CA3AF'}
+                />
+              </View>
+            </View>
+            
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleEditProduct(product)}>
+                <Ionicons name="pencil-outline" size={18} color="#6B7280" />
+                <Text style={styles.actionText}>Editar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleDuplicate(product)}>
+                <Ionicons name="copy-outline" size={18} color="#6B7280" />
+                <Text style={styles.actionText}>Duplicar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleDelete(product)}>
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Text style={[styles.actionText, { color: '#EF4444' }]}>Excluir</Text>
               </TouchableOpacity>
             </View>
-          )}
+          </TouchableOpacity>
+        ))}
+        
+        <View style={{ height: 100 }} />
+      </ScrollView>
 
-          {/* Products grouped by category */}
-          <View style={[styles.card, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
-            <Text style={[styles.cardTitle, { color: isDark ? '#fff' : '#000' }]}>
-              Produtos Cadastrados ({products.length})
+      {/* Add/Edit Modal */}
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.cancelBtn}>Cancelar</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>
+              {editingProduct ? 'Editar Produto' : 'Novo Produto'}
             </Text>
-
-            {Object.entries(groupedProducts).map(([categoryName, categoryProducts]) => (
-              <View key={categoryName} style={styles.categoryGroup}>
-                <Text style={[styles.categoryGroupTitle, { color: isDark ? '#ffea07' : '#FF6B35' }]}>
-                  {categoryName} ({categoryProducts.length})
-                </Text>
-                
-                {categoryProducts.map((product) => (
-                  <View key={product.id} style={[styles.productItem, { borderBottomColor: isDark ? '#333' : '#eee' }]}>
-                    <View style={styles.productInfo}>
-                      {product.image ? (
-                        <Image source={{ uri: product.image }} style={styles.productThumb} />
-                      ) : (
-                        <View style={styles.productThumbPlaceholder}>
-                          <Ionicons name="image-outline" size={24} color="#ccc" />
-                        </View>
-                      )}
-                      <View style={styles.productDetails}>
-                        <Text style={[styles.productName, { color: isDark ? '#fff' : '#000' }]}>
-                          {product.name}
-                        </Text>
-                        <Text style={[styles.productPrice, { color: '#ffea07' }]}>
-                          R$ {product.price.toFixed(2)}
-                        </Text>
-                        <View style={styles.productMeta}>
-                          <Text style={[styles.productStatus, { color: product.active ? '#4CAF50' : '#999' }]}>
-                            {product.active ? '● Ativo' : '○ Inativo'}
-                          </Text>
-                          {product.stock_enabled && (
-                            <Text style={[
-                              styles.productStock,
-                              { color: product.stock_quantity > 0 ? '#4CAF50' : '#F44336' }
-                            ]}>
-                              📦 {product.stock_quantity} un.
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-                    <View style={styles.productActions}>
-                      <TouchableOpacity onPress={() => handleToggle(product.id)} style={styles.actionButton}>
-                        <Ionicons name={product.active ? 'eye-off' : 'eye'} size={20} color="#2196F3" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleEdit(product)} style={styles.actionButton}>
-                        <Ionicons name="pencil" size={20} color="#4CAF50" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDelete(product.id, product.name)} style={styles.actionButton}>
-                        <Ionicons name="trash" size={20} color="#F44336" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ))}
-
-            {products.length === 0 && (
-              <Text style={[styles.emptyText, { color: isDark ? '#aaa' : '#666' }]}>
-                Nenhum produto cadastrado
-              </Text>
-            )}
+            <TouchableOpacity onPress={handleSave}>
+              <Text style={styles.saveBtn}>Salvar</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </View>
-    </KeyboardAvoidingView>
+          
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {/* Image */}
+            <TouchableOpacity style={styles.imageUpload} onPress={pickImage}>
+              {formData.image ? (
+                <Image source={{ uri: formData.image }} style={styles.uploadedImage} />
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={32} color="#9CA3AF" />
+                  <Text style={styles.uploadText}>Adicionar foto</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            
+            {/* Name */}
+            <Text style={styles.label}>Nome *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Nome do produto"
+              placeholderTextColor="#9CA3AF"
+              value={formData.name}
+              onChangeText={(text) => setFormData({ ...formData, name: text })}
+            />
+            
+            {/* Description */}
+            <Text style={styles.label}>Descrição</Text>
+            <TextInput
+              style={[styles.input, { height: 80 }]}
+              placeholder="Descrição do produto"
+              placeholderTextColor="#9CA3AF"
+              value={formData.description}
+              onChangeText={(text) => setFormData({ ...formData, description: text })}
+              multiline
+              textAlignVertical="top"
+            />
+            
+            {/* Category */}
+            <Text style={styles.label}>Categoria *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPicker}>
+              {categories.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryOption,
+                    formData.category_id === cat.id && styles.categoryOptionActive,
+                  ]}
+                  onPress={() => setFormData({ ...formData, category_id: cat.id })}
+                >
+                  <Text
+                    style={[
+                      styles.categoryOptionText,
+                      formData.category_id === cat.id && styles.categoryOptionTextActive,
+                    ]}
+                  >
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            {/* Prices */}
+            <View style={styles.priceInputs}>
+              <View style={styles.priceInputWrapper}>
+                <Text style={styles.label}>Preço *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0,00"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.price}
+                  onChangeText={(text) => setFormData({ ...formData, price: text })}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              
+              <View style={styles.priceInputWrapper}>
+                <Text style={styles.label}>Preço Promo</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0,00"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.promo_price}
+                  onChangeText={(text) => setFormData({ ...formData, promo_price: text })}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            </View>
+            
+            {/* Featured */}
+            <Text style={styles.label}>Destaque</Text>
+            <View style={styles.featuredOptions}>
+              {[
+                { value: '', label: 'Nenhum' },
+                { value: 'mais_vendido', label: '🔥 Mais Vendido' },
+                { value: 'recomendado', label: '⭐ Recomendado' },
+                { value: 'novo', label: '✨ Novo' },
+              ].map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.featuredOption,
+                    formData.featured === opt.value && styles.featuredOptionActive,
+                  ]}
+                  onPress={() => setFormData({ ...formData, featured: opt.value })}
+                >
+                  <Text
+                    style={[
+                      styles.featuredOptionText,
+                      formData.featured === opt.value && styles.featuredOptionTextActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            {/* Active */}
+            <View style={styles.switchRow}>
+              <Text style={styles.switchLabel}>Produto ativo</Text>
+              <Switch
+                value={formData.active}
+                onValueChange={(value) => setFormData({ ...formData, active: value })}
+                trackColor={{ false: '#E5E7EB', true: '#BBF7D0' }}
+                thumbColor={formData.active ? '#10B981' : '#9CA3AF'}
+              />
+            </View>
+            
+            <View style={{ height: 50 }} />
+          </ScrollView>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F8F9FA',
   },
   centerContent: {
     justifyContent: 'center',
@@ -510,204 +540,314 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
     paddingBottom: 16,
-  },
-  backButton: {
-    width: 40,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  addButton: {
-    width: 40,
-    alignItems: 'flex-end',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  card: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
     paddingHorizontal: 16,
-    marginBottom: 12,
-    fontSize: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  textArea: {
-    height: 80,
+  backBtn: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  addBtn: {
+    padding: 8,
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 15,
+    color: '#1F2937',
+  },
+  filtersScroll: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 4,
+  },
+  filterPillActive: {
+    backgroundColor: '#3B82F6',
+  },
+  filterText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  filterTextActive: {
+    color: '#fff',
+  },
+  productsList: {
+    flex: 1,
+    paddingHorizontal: 16,
     paddingTop: 12,
-    textAlignVertical: 'top',
   },
-  pickerContainer: {
+  productCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
     marginBottom: 12,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  productRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  productImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+  },
+  productImagePlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  productInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  productHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  productName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    flex: 1,
+  },
+  featuredBadge: {
+    marginLeft: 6,
+  },
+  featuredText: {
+    fontSize: 14,
+  },
+  productCategory: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  price: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#10B981',
+  },
+  oldPrice: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+    marginRight: 6,
+  },
+  promoPrice: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#EF4444',
+  },
+  statsText: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  productActions: {
+    marginLeft: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  actionText: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  cancelBtn: {
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  saveBtn: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  imageUpload: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  uploadedImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  uploadText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 4,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 6,
+    marginTop: 12,
   },
-  helperText: {
-    fontSize: 12,
-    marginTop: 2,
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#1F2937',
   },
   categoryPicker: {
-    flexDirection: 'row',
+    marginTop: 4,
   },
   categoryOption: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 20,
+    backgroundColor: '#F3F4F6',
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
   },
-  categoryOptionSelected: {
-    borderColor: '#ffea07',
+  categoryOptionActive: {
+    backgroundColor: '#3B82F6',
   },
   categoryOptionText: {
     fontSize: 14,
-    fontWeight: '600',
+    color: '#6B7280',
   },
-  stockContainer: {
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ffea07',
-    backgroundColor: 'rgba(255, 234, 7, 0.05)',
+  categoryOptionTextActive: {
+    color: '#fff',
+    fontWeight: '500',
   },
-  stockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  imageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#ffea07',
-    borderRadius: 12,
-    borderStyle: 'dashed',
-    marginBottom: 12,
-  },
-  imageButtonText: {
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#ffea07',
-    fontWeight: '600',
-  },
-  imagePreview: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  primaryButton: {
-    backgroundColor: '#ffea07',
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  primaryButtonText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  categoryGroup: {
-    marginBottom: 20,
-  },
-  categoryGroupTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: '#ffea07',
-  },
-  emptyText: {
-    textAlign: 'center',
-    fontSize: 14,
-    marginTop: 8,
-  },
-  productItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  productInfo: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  productThumb: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  productThumbPlaceholder: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  productDetails: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  productMeta: {
+  priceInputs: {
     flexDirection: 'row',
     gap: 12,
   },
-  productStatus: {
-    fontSize: 12,
-    fontWeight: '600',
+  priceInputWrapper: {
+    flex: 1,
   },
-  productStock: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  productActions: {
+  featuredOptions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
   },
-  actionButton: {
-    padding: 8,
-    marginLeft: 8,
+  featuredOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+  },
+  featuredOptionActive: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  featuredOptionText: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  featuredOptionTextActive: {
+    color: '#D97706',
+    fontWeight: '500',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  switchLabel: {
+    fontSize: 15,
+    color: '#1F2937',
   },
 });
