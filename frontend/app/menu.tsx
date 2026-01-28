@@ -236,6 +236,14 @@ export default function MenuScreen() {
                 </View>
               )}
             </TouchableOpacity>
+            
+            {/* Ícone Admin (discreto) */}
+            <TouchableOpacity 
+              style={styles.adminIconContainer} 
+              onPress={() => router.push('/admin-login')}
+            >
+              <Ionicons name="settings-outline" size={22} color={isDark ? '#666' : '#999'} />
+            </TouchableOpacity>
           </View>
           
           {/* Info Bar */}
