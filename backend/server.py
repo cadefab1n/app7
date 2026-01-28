@@ -273,7 +273,7 @@ def get_products(restaurant_id: str, category_id: Optional[str] = None):
     query = {"restaurant_id": restaurant_id}
     if category_id:
         query["category_id"] = category_id
-    products = serialize_list(products_col.find(query).sort("order", 1))
+    products = serialize_list(products_col.find(query).sort("order", 1).limit(200))
     return {"success": True, "products": products}
 
 @app.get("/api/products/{product_id}")
